@@ -1,79 +1,117 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// The screenshot scenes behind ?shot=chase|driving|mission|city. Each one builds a
+// real game from a fixed seed, puts Danny in the middle of the scene the shot is
+// about (a police chase, a drive through town, a mission pickup, a walk on the
+// beach), plays the real rules forward for a few seconds with a simple autopilot,
+// and hands back the screen to draw — so the frame is what real play looks like,
+// and the same seed always gives the same frame.
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
+import { STEP } from './config.js';
+import { updateGame } from './state.js';
+import { makeCar } from './vehicles.js';
+import { makePed } from './pedestrians.js';
+import { SCREEN_PLAY } from './render.js';
 
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+/** Drive straight down a road, steering gently back to its centreline. */
+function roadPilot(state, roadX) {
+  const car = state.player.car;
+  const steer = Math.max(-1, Math.min(1, (car.x - roadX) / 40));
+  return {
+    axes: { x: steer, y: -1 },
+    shift: false, mouseX: 0, mouseY: 0, mouseDown: false, actions: 0,
+    mouseWorld: null,
+  };
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
+function idleSnap() {
+  return { axes: { x: 0, y: 0 }, shift: false, mouseX: 0, mouseY: 0, mouseDown: false, actions: 0, mouseWorld: null };
+}
+
+function walkSnap() {
+  return { axes: { x: 1, y: 0 }, shift: false, mouseX: 0, mouseY: 0, mouseDown: false, actions: 0, mouseWorld: null };
+}
+
+function putPlayerInCar(state, x, y, angle, color) {
+  const car = makeCar(x, y, angle, color || '#c94f4f', 'parked');
+  car.kind = 'stolen';
+  state.parked.push(car);
+  state.player.car = car;
+  state.player.onFoot = false;
+  car.driver = 'player';
+  state.player.x = x;
+  state.player.y = y;
+  state.player.angle = angle;
+  car.speed = 220;
+  return car;
+}
+
+function addPoliceBehind(state, x, y, count) {
+  for (let i = 0; i < count; i += 1) {
+    const car = makeCar(x + (i - 1) * 70, y - 90 - i * 60, Math.PI / 2, '#2f6fd8', 'police');
+    car.speed = 260;
+    state.policeCars.push(car);
   }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
+}
+
+function addPedsNear(state, x, y, count) {
+  for (let i = 0; i < count; i += 1) {
+    const ped = makePed(state.random, x + (state.random() - 0.5) * 320, y + (state.random() - 0.5) * 260);
+    state.peds.push(ped);
   }
-  return best;
 }
 
 /**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
+ * Set `state` to the named scene and play it forward, then return the screen
+ * to draw over it. Unknown names stage the city walk.
  */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+export function stageShot(name, state) {
+  const p = state.player;
+  if (name === 'chase') {
+    // Mission 2's delivery run, wanted level 3, three cruisers on Danny's tail.
+    state.missionIndex = 1;
+    state.missionStep = 2;
+    state.heat = 62;
+    state.wanted = 3;
+    state.lastCrimeAt = state.time;
+    putPlayerInCar(state, 1500, 1000, Math.PI / 2, '#e8c84f');
+    addPoliceBehind(state, 1500, 1000, 3);
+    // Oncoming and same-way traffic on the same road, set up as proper road followers.
+    for (let i = 0; i < 5; i += 1) {
+      const lane = i % 2 === 0 ? 1 : -1;
+      const dir = i % 2 === 0 ? 1 : -1;
+      const car = makeCar(1500 + lane * 24, 1250 + i * 130, dir > 0 ? Math.PI / 2 : -Math.PI / 2, '#4f7ec9', 'traffic');
+      car.axis = 'v';
+      car.road = 3;
+      car.lane = lane;
+      car.dir = dir;
+      car.speed = 150;
+      state.traffic.push(car);
+    }
+    for (let i = 0; i < 150; i += 1) updateGame(state, roadPilot(state, 1500), STEP);
+    return { screen: SCREEN_PLAY };
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
+  if (name === 'driving') {
+    // A sunny cruise down the beachfront drive, traffic all around.
+    putPlayerInCar(state, 300, 700, Math.PI / 2, '#4fc98a');
+    addPedsNear(state, 200, 900, 6);
+    for (let i = 0; i < 120; i += 1) updateGame(state, roadPilot(state, 300), STEP);
+    return { screen: SCREEN_PLAY };
   }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  if (name === 'mission') {
+    // Mission 2's pickup on Sunset Beach, on foot, package beacon glowing.
+    state.missionIndex = 1;
+    state.missionStep = 1;
+    p.x = 470;
+    p.y = 800;
+    p.aimAngle = Math.PI / 2;
+    addPedsNear(state, 420, 850, 8);
+    for (let i = 0; i < 40; i += 1) updateGame(state, idleSnap(), STEP);
+    return { screen: SCREEN_PLAY };
+  }
+  // city: a walk along the beach promenade, pedestrians everywhere.
+  p.x = 210;
+  p.y = 1300;
+  p.angle = Math.PI / 2;
+  addPedsNear(state, 220, 1300, 14);
+  for (let i = 0; i < 90; i += 1) updateGame(state, walkSnap(), STEP);
+  return { screen: SCREEN_PLAY };
 }
