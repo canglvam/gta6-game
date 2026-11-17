@@ -48,9 +48,10 @@ function addPoliceBehind(state, x, y, count) {
   }
 }
 
-function addPedsNear(state, x, y, count) {
+function addPedsNear(state, x, y, count, spread) {
+  const s = spread || 320;
   for (let i = 0; i < count; i += 1) {
-    const ped = makePed(state.random, x + (state.random() - 0.5) * 320, y + (state.random() - 0.5) * 260);
+    const ped = makePed(state.random, x + (state.random() - 0.5) * s, y + (state.random() - 0.5) * (s * 0.8));
     state.peds.push(ped);
   }
 }
@@ -109,8 +110,8 @@ export function stageShot(name, state) {
   p.y = 1300;
   p.angle = Math.PI / 2;
   p.aimAngle = Math.PI / 2;
-  addPedsNear(state, 400, 1300, 14);
-  addPedsNear(state, 400, 1300, 4);
-  for (let i = 0; i < 90; i += 1) updateGame(state, idleSnap(), STEP);
+  addPedsNear(state, 400, 1300, 14, 700);
+  addPedsNear(state, 400, 1300, 4, 200);
+  for (let i = 0; i < 240; i += 1) updateGame(state, idleSnap(), STEP);
   return { screen: SCREEN_PLAY };
 }

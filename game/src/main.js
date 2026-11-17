@@ -72,12 +72,14 @@ function runShot(name) {
   const scene = stageShot(name, state);
   window.__game = { state, screen: scene.screen };
   let painted = 0;
+  // Keep painting on every frame (not just twice): a resize after the first
+  // paints resets the canvas to transparent, and a later frame must repaint it.
   function paint() {
     renderer.draw(state, scene.screen, {});
     hud.draw(canvas.getContext('2d'), state);
     painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
+    if (painted === 2) window.__shotReady = true;
+    requestAnimationFrame(paint);
   }
   requestAnimationFrame(paint);
 }
