@@ -2,8 +2,7 @@
 // sidewalk point to the next, pause, and pick a new one; gunfire or a speeding car
 // nearby makes them run away. A few wait at kerbs as taxi fares.
 
-import { WORLD } from './config.js';
-import { randomSidewalkPoint } from './world.js';
+import { collideCircle, randomSidewalkPoint } from './world.js';
 import { pick, range } from './random.js';
 
 export const PED_COLORS = ['#e8e8e8', '#d9a05f', '#7a9ac9', '#c97a7a', '#8ac97a', '#c9b458', '#9a7ac9', '#5fc9c2'];
@@ -36,8 +35,9 @@ export function updatePed(ped, random, dt, city, scare) {
     ped.angle = Math.atan2(dy, dx);
     ped.x += (dx / d) * 150 * dt;
     ped.y += (dy / d) * 150 * dt;
-    ped.x = Math.max(100, Math.min(WORLD.width - 20, ped.x));
-    ped.y = Math.max(20, Math.min(WORLD.height - 20, ped.y));
+    const resolved = collideCircle(city, ped.x, ped.y, 10);
+    ped.x = resolved.x;
+    ped.y = resolved.y;
     if (d > 420) ped.state = 'walk';
     return;
   }
@@ -67,4 +67,8 @@ export function updatePed(ped, random, dt, city, scare) {
   ped.angle = Math.atan2(dy, dx);
   ped.x += (dx / d) * ped.speed * dt;
   ped.y += (dy / d) * ped.speed * dt;
+  // Pedestrians stay out of buildings (and out of the sea): slide along walls.
+  const resolved = collideCircle(city, ped.x, ped.y, 10);
+  ped.x = resolved.x;
+  ped.y = resolved.y;
 }

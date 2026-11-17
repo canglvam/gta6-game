@@ -26,10 +26,6 @@ function idleSnap() {
   return { axes: { x: 0, y: 0 }, shift: false, mouseX: 0, mouseY: 0, mouseDown: false, actions: 0, mouseWorld: null };
 }
 
-function walkSnap() {
-  return { axes: { x: 1, y: 0 }, shift: false, mouseX: 0, mouseY: 0, mouseDown: false, actions: 0, mouseWorld: null };
-}
-
 function putPlayerInCar(state, x, y, angle, color) {
   const car = makeCar(x, y, angle, color || '#c94f4f', 'parked');
   car.kind = 'stolen';
@@ -108,10 +104,13 @@ export function stageShot(name, state) {
     return { screen: SCREEN_PLAY };
   }
   // city: a walk along the beach promenade, pedestrians everywhere.
-  p.x = 210;
+  // Danny stands on the promenade while the crowds stroll past him.
+  p.x = 400;
   p.y = 1300;
   p.angle = Math.PI / 2;
-  addPedsNear(state, 220, 1300, 14);
-  for (let i = 0; i < 90; i += 1) updateGame(state, walkSnap(), STEP);
+  p.aimAngle = Math.PI / 2;
+  addPedsNear(state, 400, 1300, 14);
+  addPedsNear(state, 400, 1300, 4);
+  for (let i = 0; i < 90; i += 1) updateGame(state, idleSnap(), STEP);
   return { screen: SCREEN_PLAY };
 }

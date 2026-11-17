@@ -95,7 +95,7 @@ export function createRenderer(canvas) {
     ];
     for (const tag of tags) {
       if (tag.x < x0 - 200 || tag.x > x1 + 200 || tag.y < y0 - 100 || tag.y > y1 + 100) continue;
-      text(tag.name, tag.x, tag.y, tag.size, 'rgba(255,255,255,0.16)', 'center');
+      text(tag.name, tag.x, tag.y, tag.size, 'rgba(255,255,255,0.26)', 'center');
     }
   }
 

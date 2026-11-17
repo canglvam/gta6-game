@@ -70,6 +70,7 @@ function handleEvents() {
 
 function runShot(name) {
   const scene = stageShot(name, state);
+  window.__game = { state, screen: scene.screen };
   let painted = 0;
   function paint() {
     renderer.draw(state, scene.screen, {});
